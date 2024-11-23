@@ -54,7 +54,7 @@ router.get("/users/:userId", async (req, res) => {
 // CREATE OR UPDATE CATEGORIES
 router.post("/users/:userId/categories", async (req, res) => {
   const { userId } = req.params;
-  const { category } = req.body;
+  const { category, oldCategory, newCategory } = req.body;
 
   try {
     const user = await userSchema.findById(userId);
@@ -62,44 +62,63 @@ router.post("/users/:userId/categories", async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    let newKey = Object.keys(category)[0];
-
     let message = "updated";
-    if (!user.categories.has(newKey)) {
-      user.categories.set(newKey, category[newKey]);
-      message = "created";
-    }
 
-    const categoryList = user.categories.get(newKey);
-
-    const imageAlreadySaved = categoryList.some(
-      (item) => item.id === category[newKey][0].id
-    );
-
-    if (imageAlreadySaved) {
-      // delete image from category
-      user.categories.set(
-        newKey,
-        categoryList.filter((item) => item.id !== category[newKey][0].id)
-      );
-    } else {
-      if (category[newKey] && Array.isArray(category[newKey])) {
-        category[newKey].forEach((newElement) => {
-          const existingIndex = categoryList.findIndex(
-            (element) => element.id === newElement.id
-          );
-          if (existingIndex === -1) {
-            categoryList.push(newElement);
-          }
-        });
+    if (oldCategory && newCategory) {
+      console.log("1");
+      // Rename category
+      if (user.categories.has(oldCategory)) {
+        console.log("renaming");
+        const existingData = user.categories.get(oldCategory);
+        user.categories.delete(oldCategory);
+        user.categories.set(newCategory, existingData);
+        message = "renamed";
+      } else {
+        return res.status(400).json({ message: "Old category not found" });
       }
+    } else if (category) {
+      console.log("2");
+      // Add or update a category
+      let newKey = Object.keys(category)[0];
+
+      if (!user.categories.has(newKey)) {
+        user.categories.set(newKey, category[newKey]);
+        message = "created";
+      }
+
+      const categoryList = user.categories.get(newKey);
+
+      const imageAlreadySaved = categoryList.some(
+        (item) => item.id === category[newKey][0]?.id
+      );
+
+      if (imageAlreadySaved) {
+        // Delete image from category
+        user.categories.set(
+          newKey,
+          categoryList.filter((item) => item.id !== category[newKey][0]?.id)
+        );
+      } else {
+        if (category[newKey] && Array.isArray(category[newKey])) {
+          category[newKey].forEach((newElement) => {
+            const existingIndex = categoryList.findIndex(
+              (element) => element.id === newElement.id
+            );
+            if (existingIndex === -1) {
+              categoryList.push(newElement);
+            }
+          });
+        }
+      }
+    } else {
+      console.log("3");
+      return res.status(400).json({ message: "Invalid request" });
     }
 
     const updatedUser = await user.save();
     const response = {
       message,
       user: updatedUser,
-      imageAlreadySaved,
     };
 
     return res.status(200).json(response);
@@ -207,6 +226,35 @@ router.put("/users/:userId", async (req, res) => {
     return res.status(200).json(displayName);
   } catch (err) {
     console.log("Error updating username:", err);
+    return res.status(400).json({ message: err.message });
+  }
+});
+
+router.delete("/users/:userId/categories", async (req, res) => {
+  const { userId } = req.params;
+  const { category } = req.body;
+
+  try {
+    // Find the user
+    const user = await userSchema.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check if the category exists
+    if (!user.categories.has(category)) {
+      return res.status(404).json({ message: "Category not found" });
+    }
+
+    // Remove the category
+    user.categories.delete(category);
+
+    // Save the updated user
+    await user.save();
+
+    return res.status(200).json({ message: "Category deleted successfully" });
+  } catch (err) {
+    console.error("Error deleting category:", err.message);
     return res.status(400).json({ message: err.message });
   }
 });
